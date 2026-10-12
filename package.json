@@ -1,0 +1,15 @@
+{
+	"name": "mymarkdownblog",
+	"description": "Generate a markdown blog from the RSS feed for Scripting News.",
+	"author": "Dave Winer <dave@scripting.com>",
+	"main": "buildblog.js",
+	"license": "MIT",
+	"version": "0.4.0",
+	"dependencies" : {
+		"dateformat": "4.5.1",
+		"turndown": "7.2.2",
+		"daveutils": "*",
+		"daves3": "*",
+		"reallysimple": "*"
+		} 
+	}
