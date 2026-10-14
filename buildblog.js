@@ -4,13 +4,17 @@ const dateFormat = require ("dateformat");
 const utils = require ("daveutils");
 const s3 = require ("daves3");
 const reallysimple = require ("reallysimple");
+const opml = require ("opml");
 
 const config = {
 	feedUrl: "http://scripting.com/rss.xml",
 	s3FolderPath: "/scripting.com/code/mymarkdown/",
 	removeFromGuid: "http://scripting.com/",
 	urlMarkdownFolder: "http://scripting.com/code/mymarkdown/",
-	maxDescriptionChars: 50
+	maxDescriptionChars: 50,
+	flGetFromFeed: true,
+	flGetFromOutline: false,
+	urlOpmlFile: "https://raw.githubusercontent.com/scripting/Scripting-News/refs/heads/master/blog/opml/2025/05.opml"
 	}
 
 function formatDate (theDate, theFormat) {
@@ -49,61 +53,98 @@ function getMarkdownFromHtml (htmltext) { //3/28/26 by DW
 	const markdowntext = myTurndown.turndown (htmltext);
 	return (markdowntext);
 	}
+function yamlString (theString) { //10/13/26 by CC
+	return ("\"" + String (theString).replace (/\\/g, "\\\\").replace (/"/g, "\\\"") + "\"");
+	}
+
+
+
+
+function publishFeedItemList (theList) {
+	var homePageLinks = new Array ();
+	theList.forEach (function (item) {
+		var mdtext = "";
+		function add (s) {
+			mdtext += "\n" + s + "\n"
+			}
+		
+		add (dateFormat (new Date (item.pubDate), "dddd, mmmm d, yyyy"));
+		
+		if (item.title !== undefined) {
+			add ("# " + item.title)
+			}
+		
+		var markdowntext =  (item.markdownText == undefined) ? getMarkdownFromHtml (item.description) : item.markdownText;
+		//add frontmatter yaml text -- 10/13/26 by CC 
+			var frontMatterText = "";
+			if (item.title !== undefined) {
+				frontMatterText += "title: " + yamlString (item.title) + "\n";
+				}
+			if (frontMatterText.length > 0) {
+				mdtext = "---\n" + frontMatterText + "---\n\n" + mdtext;
+				}
+		add (markdowntext)
+		
+		var relpath = utils.stringDelete (item.guid, 1, config.removeFromGuid.length); //remove http://scripting.com/ from beginning of guid 
+		relpath = utils.replaceAll (relpath, ".html", "")
+		relpath = utils.replaceAll (relpath, "#", "/"); 
+		relpath += ".md";
+		
+		const s3path =  config.s3FolderPath + relpath;
+		
+		s3.newObject (s3path, mdtext);  
+		
+		const linkurl = config.urlMarkdownFolder + relpath;  
+		const linktext = (item.title === undefined) ? shortDescription (item.description) : item.title;
+		const whentext = formatDate (item.pubDate, "mmm dd"); 
+		const markdownLink = whentext + ": " + "[" + linktext + "](" + linkurl + ")";
+		homePageLinks.push (markdownLink);
+		
+		console.log (s3path);
+		});
+	console.log ("homePageLinks == " + utils.jsonStringify (homePageLinks));
+	
+	function saveHomePageLinks () {
+		var s3path = config.s3FolderPath + "links.md", mdtext = ""; 
+		homePageLinks.forEach (function (theLink) {
+			mdtext += theLink + "\n\n";
+			});
+		s3.newObject (s3path, mdtext);  
+		console.log (s3path);
+		}
+	saveHomePageLinks ();
+	}
 
 utils.readConfig ("config.json", config, function () {
 	console.log ("\nconfig == " + utils.jsonStringify (config) + "\n");
-	reallysimple.readFeed (config.feedUrl, function (err, theFeed) {
-		if (err) {
-			console.log (err.message);
-			}
-		else {
-			var homePageLinks = new Array ();
-			theFeed.items.forEach (function (item) {
-				var mdtext = "";
-				function add (s) {
-					mdtext += "\n" + s + "\n"
-					}
-				
-				add (dateFormat (new Date (item.pubDate), "dddd, mmmm d, yyyy"));
-				
-				if (item.title !== undefined) {
-					add ("# " + item.title)
-					}
-				
-				var markdowntext =  (item.markdownText == undefined) ? getMarkdownFromHtml (item.description) : item.markdownText;
-				add (markdowntext)
-				
-				var relpath = utils.stringDelete (item.guid, 1, config.removeFromGuid.length); //remove http://scripting.com/ from beginning of guid 
-				relpath = utils.replaceAll (relpath, ".html", "")
-				relpath = utils.replaceAll (relpath, "#", "/"); 
-				relpath += ".md";
-				
-				const s3path =  config.s3FolderPath + relpath;
-				
-				s3.newObject (s3path, mdtext);  
-				
-				const linkurl = config.urlMarkdownFolder + relpath;  
-				const linktext = (item.title === undefined) ? shortDescription (item.description) : item.title;
-				const whentext = formatDate (item.pubDate, "mmm dd"); 
-				const markdownLink = whentext + ": " + "[" + linktext + "](" + linkurl + ")";
-				homePageLinks.push (markdownLink);
-				
-				console.log (s3path);
-				});
-			console.log ("homePageLinks == " + utils.jsonStringify (homePageLinks));
-			
-			function saveHomePageLinks () {
-				var s3path = config.s3FolderPath + "links.md", mdtext = ""; 
-				homePageLinks.forEach (function (theLink) {
-					mdtext += theLink + "\n\n";
-					});
-				s3.newObject (s3path, mdtext);  
-				console.log (s3path);
+	
+	if (config.flGetFromFeed) {
+		reallysimple.readFeed (config.feedUrl, function (err, theFeed) {
+			if (err) {
+				console.log (err.message);
 				}
-			saveHomePageLinks ();
-			
-			
-			
+			else {
+				publishFeedItemList (theFeed.items);
+				}
+			});
+		}
+	else {
+		if (config.flGetFromOutline) {
+			opml.readOutline (config.urlOpmlFile, function (err, theOutline) {
+				if (err) {
+					console.log (err.message);
+					}
+				else {
+					publishOpmlMonth (theOutline);
+					}
+				});
 			}
-		});
+		}
+	
+	
+	
+	
+	
+	
+	
 	});
